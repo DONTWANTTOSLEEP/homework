@@ -1,4 +1,5 @@
 package com.youo.homework;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.youo.homework.library.entity.Book;
 import com.youo.homework.library.entity.Record;
 import com.youo.homework.library.entity.User;
@@ -13,6 +14,7 @@ import javax.annotation.Resource;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
@@ -35,10 +37,8 @@ class HomeworkApplicationTests {
 
     @Test
     void testBook(){
-        int count = bookService.count();
-        System.out.println("count = " + count);
-        List<Book> list = bookService.list();
-        System.out.println("list = " + list);
+        boolean b = bookService.removeById(252);
+        System.out.println("b = " + b);
     }
 
     @Test
@@ -48,6 +48,28 @@ class HomeworkApplicationTests {
         record.setAuthor("曹雪芹");record.setBorrowTime(LocalDateTime.now());record.setBorrowState(0);
         recordService.save(record);
         List<Record> list = recordService.list();
+        System.out.println("list = " + list);
+    }
+
+    @Test
+    void addUser(){
+        List<User> users = new ArrayList<>();
+        for (int i = 0; i < 111; i++) {
+            User user = new User();
+            user.setPkName("User"+i);
+            user.setPassword("11111"+i);
+            user.setUserLevel(0);
+            users.add(user);
+        }
+        userService.saveBatch(users);
+    }
+
+    @Test
+    void selectUser(){
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("pk_id,pk_name,password,user_level")
+                .eq("user_level",0);
+        List list = userService.list(queryWrapper);
         System.out.println("list = " + list);
     }
 
