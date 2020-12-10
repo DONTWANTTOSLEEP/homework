@@ -4,12 +4,16 @@ package com.youo.homework.library.controller;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sun.istack.internal.NotNull;
 import com.youo.homework.library.entity.User;
 import com.youo.homework.library.msg.Msg;
 import com.youo.homework.library.service.impl.UserServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Objects;
 
 
 /**
@@ -27,7 +31,10 @@ public class UserController {
     UserServiceImpl userService;
 
     @PostMapping("/login")
-    public Msg Login(@RequestBody User user){
+    public Msg Login(@RequestBody @Validated User user, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("userInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         User one = selectByName(user.getPkName());
         if (one == null) {
             return Msg.fail().add("userInfo","用户名不存在");
@@ -39,7 +46,10 @@ public class UserController {
     }
 
     @PostMapping("/register")
-    public synchronized Msg register(@RequestBody User user){
+    public synchronized Msg register(@RequestBody @Validated User user, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("registerInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         String msg;
         if(null != selectByName(user.getPkName())){
             return Msg.fail().add("registerInfo","用户名已存在");
@@ -93,7 +103,10 @@ public class UserController {
     }
 
     @PutMapping("/updateUser")
-    public synchronized Msg updateUser(@RequestBody User user){
+    public synchronized Msg updateUser(@RequestBody @Validated User user, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("updateUserInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         User selectUser = selectByName(user.getPkName());
         if (selectUser != null && !selectUser.getPkId().equals(user.getPkId())) {
             return Msg.fail().add("updateUserInfo","用户名已存在");

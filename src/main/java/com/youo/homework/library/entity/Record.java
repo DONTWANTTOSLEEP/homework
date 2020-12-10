@@ -8,6 +8,9 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.Size;
+
 /**
  * <p>
  * 
@@ -27,10 +30,14 @@ public class Record implements Serializable {
 
     private Integer pkBookId;
 
+    @NotEmpty
+    @Size(min = 3, max = 14)
     private String pkUserName;
 
+    @NotEmpty
     private String pkBookName;
 
+    @NotEmpty
     private String author;
 
     private LocalDateTime borrowTime;

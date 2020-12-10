@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import javax.validation.constraints.NotEmpty;
+
 /**
  * <p>
  * 
@@ -24,8 +26,10 @@ public class Book implements Serializable {
     @TableId(value = "pk_book_id", type = IdType.AUTO)
     private Integer pkBookId;
 
+    @NotEmpty
     private String pkBookName;
 
+    @NotEmpty
     private String author;
 
     private Integer amount;

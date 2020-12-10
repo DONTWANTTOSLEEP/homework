@@ -8,7 +8,11 @@ import com.youo.homework.library.entity.Book;
 import com.youo.homework.library.msg.Msg;
 import com.youo.homework.library.service.impl.BookServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Objects;
 
 /**
  * <p>
@@ -45,7 +49,10 @@ public class BookController {
     }
 
     @PostMapping("/addBook")
-    public synchronized Msg addBook(@RequestBody Book book){
+    public synchronized Msg addBook(@RequestBody @Validated Book book, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("addBookInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         Book bookByName = getBookByName(book.getPkBookName());
         if (bookByName != null) {
             return Msg.fail().add("addBookInfo","书已存在");
@@ -67,7 +74,10 @@ public class BookController {
     }
 
     @PutMapping("/updateBook")
-    public synchronized Msg updateBook(@RequestBody Book book){
+    public synchronized Msg updateBook(@RequestBody @Validated Book book,BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("updateBookInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         Book bookByName = getBookByName(book.getPkBookName());
         if (bookByName != null && !bookByName.getPkBookId().equals(book.getPkBookId())) {
             return Msg.fail().add("updateBookInfo","本书已存在");

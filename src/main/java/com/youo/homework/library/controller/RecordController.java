@@ -13,9 +13,12 @@ import com.youo.homework.library.service.impl.RecordServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * <p>
@@ -74,7 +77,10 @@ public class RecordController {
     }
 
     @PostMapping("/subscribe")
-    public synchronized Msg subscribe(@RequestBody Record record){
+    public synchronized Msg subscribe(@RequestBody @Validated Record record, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("subscribe",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         Record repeat = isRepeat(record.getPkBookId(), record.getPkUserName());
         if (repeat != null) {
             return Msg.fail().add("subscribe","您尚未归还本书，请勿重复借阅！");
@@ -90,7 +96,10 @@ public class RecordController {
 
     @Transactional
     @PutMapping("/updateRecord")
-    public synchronized Msg agree(@RequestBody Record record){
+    public synchronized Msg agree(@RequestBody @Validated Record record, BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("agreeInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         System.out.println("record = " + record);
         if (record.getBorrowState().equals(0)){
             UpdateWrapper<Record> updateWrapper = new UpdateWrapper<>();
@@ -135,7 +144,10 @@ public class RecordController {
     }
 
     @PutMapping("/refuse")
-    public Msg refuse(@RequestBody Record record){
+    public Msg refuse(@RequestBody @Validated Record record,BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("refuseInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         UpdateWrapper<Record> recordUpdateWrapper = new UpdateWrapper<>();
         recordUpdateWrapper.set("borrow_state", -1)
                 .eq("pk_book_id", record.getPkBookId())
@@ -149,7 +161,10 @@ public class RecordController {
     }
 
     @PutMapping("/returnBook")
-    public Msg returnBook(@RequestBody Record record){
+    public Msg returnBook(@RequestBody @Validated Record record,BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("returnInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
         UpdateWrapper<Record> UpdateWrapperRecord = new UpdateWrapper<>();
         UpdateWrapperRecord.set("borrow_state", 2)
                 .eq("pk_book_id", record.getPkBookId())
