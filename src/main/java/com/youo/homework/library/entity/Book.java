@@ -21,7 +21,7 @@ public class Book implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @TableId(value = "pk_Book_id", type = IdType.AUTO)
+    @TableId(value = "pk_book_id", type = IdType.AUTO)
     private Integer pkBookId;
 
     private String pkBookName;

@@ -10,10 +10,6 @@ import com.youo.homework.library.service.impl.BookServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import org.springframework.stereotype.Controller;
-
-import java.util.List;
-
 /**
  * <p>
  *  前端控制器
@@ -49,7 +45,7 @@ public class BookController {
     }
 
     @PostMapping("/addBook")
-    public Msg addBook(@RequestBody Book book){
+    public synchronized Msg addBook(@RequestBody Book book){
         Book bookByName = getBookByName(book.getPkBookName());
         if (bookByName != null) {
             return Msg.fail().add("addBookInfo","书已存在");
@@ -70,11 +66,23 @@ public class BookController {
         return Msg.fail().add("deleteInfo","删除失败，请重试！");
     }
 
+    @PutMapping("/updateBook")
+    public synchronized Msg updateBook(@RequestBody Book book){
+        Book bookByName = getBookByName(book.getPkBookName());
+        if (bookByName != null && !bookByName.getPkBookId().equals(book.getPkBookId())) {
+            return Msg.fail().add("updateBookInfo","本书已存在");
+        }
+        boolean b = bookService.updateById(book);
+        if (b) {
+            return Msg.success().add("updateBookInfo","更新成功");
+        }
+        return Msg.fail().add("updateBookInfo","更新失败，请重试！");
+    }
+
     public Book getBookByName(String name){
         QueryWrapper<Book> queryWrapper = new QueryWrapper<>();
         queryWrapper.select("pk_book_id, pk_book_name, author, amount")
                 .eq("pk_book_name", name);
-        Book one = bookService.getOne(queryWrapper);
-        return one;
+        return bookService.getOne(queryWrapper);
     }
 }

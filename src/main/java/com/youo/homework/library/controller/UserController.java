@@ -10,7 +10,6 @@ import com.youo.homework.library.service.impl.UserServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 
 
 /**
@@ -40,7 +39,7 @@ public class UserController {
     }
 
     @PostMapping("/register")
-    public Msg register(@RequestBody User user){
+    public synchronized Msg register(@RequestBody User user){
         String msg;
         if(null != selectByName(user.getPkName())){
             return Msg.fail().add("registerInfo","用户名已存在");
@@ -94,7 +93,7 @@ public class UserController {
     }
 
     @PutMapping("/updateUser")
-    public Msg updateUser(@RequestBody User user){
+    public synchronized Msg updateUser(@RequestBody User user){
         User selectUser = selectByName(user.getPkName());
         if (selectUser != null && !selectUser.getPkId().equals(user.getPkId())) {
             return Msg.fail().add("updateUserInfo","用户名已存在");
@@ -110,7 +109,6 @@ public class UserController {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.select("pk_id, pk_name, password, user_level")
                 .eq("pk_name",userName);
-        User one = userService.getOne(queryWrapper);
-        return one;
+        return userService.getOne(queryWrapper);
     }
 }
