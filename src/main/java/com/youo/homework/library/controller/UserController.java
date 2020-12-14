@@ -35,6 +35,7 @@ public class UserController {
         if (bindingResult.hasErrors()){
             return Msg.fail().add("userInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
         }
+
         User one = selectByName(user.getPkName());
         if (one == null) {
             return Msg.fail().add("userInfo","用户名不存在");

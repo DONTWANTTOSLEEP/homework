@@ -6,9 +6,11 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.youo.homework.library.entity.Book;
+import com.youo.homework.library.entity.Operate;
 import com.youo.homework.library.entity.Record;
 import com.youo.homework.library.msg.Msg;
 import com.youo.homework.library.service.impl.BookServiceImpl;
+import com.youo.homework.library.service.impl.OperateServiceImpl;
 import com.youo.homework.library.service.impl.RecordServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +38,8 @@ public class RecordController {
     RecordServiceImpl recordService;
     @Autowired
     BookServiceImpl bookService;
+    @Autowired
+    OperateServiceImpl operateService;
 
     @GetMapping("/getRecordList/{page}/{sum}")
     public Msg getRecordList(@PathVariable("page") Integer page,
@@ -57,6 +61,14 @@ public class RecordController {
         return Msg.success().add("recordsInfo",recordIPage);
     }
 
+    /**
+     * function（返回当前用户的借阅历史/归还历史）
+     * @param page 页数
+     * @param sum 每页的记录数
+     * @param state 借阅状态
+     * @param userName 用户名
+     * @return Msg
+     */
     @GetMapping("/getRecordListByUser/{page}/{sum}/{borrowState}/{userName}")
     public Msg getRecordListByUser(@PathVariable("page") Integer page,
                              @PathVariable("sum") Integer sum,
@@ -94,19 +106,35 @@ public class RecordController {
         return Msg.fail().add("subscribe","借阅失败，请重试!");
     }
 
+    /**
+     * function（管理员同意用户申请）。
+     * 第一步根据 后端校验结果 判断是否中止。
+     * 然后判断 record 中的借阅状态，是申请借阅，还是申请归还。同时修改书的库存。如果修改库存失败，需要回滚事务。
+     * 两步都成功了，记录管理的操作。同样失败回滚事务。
+     * @param record 一条申请记录
+     * @param bindingResult 后端校验信息
+     * @return Msg
+     */
     @Transactional
-    @PutMapping("/updateRecord")
-    public synchronized Msg agree(@RequestBody @Validated Record record, BindingResult bindingResult){
+    @PutMapping("/updateRecord/{userName}")
+    public synchronized Msg agree(@RequestBody @Validated Record record, BindingResult bindingResult,
+                                  @PathVariable("userName") String userName){
         if (bindingResult.hasErrors()){
             return Msg.fail().add("agreeInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
         }
-        System.out.println("record = " + record);
+
+        Operate operate = new Operate();
+        operate.setOpName(userName);operate.setOpType("同意");operate.setOpWho(record.getPkUserName());
+        operate.setOpState(record.getBorrowState());operate.setOpBook(record.getPkBookName());
+        operate.setOpTime(LocalDateTime.now());
+
         if (record.getBorrowState().equals(0)){
             UpdateWrapper<Record> updateWrapper = new UpdateWrapper<>();
             updateWrapper.set("borrow_state", 1)
                     .eq("pk_book_id", record.getPkBookId())
                     .eq("pk_user_name", record.getPkUserName())
                     .eq("borrow_state", 0);
+            Object savepoint1 = TransactionAspectSupport.currentTransactionStatus().createSavepoint();
             boolean agreeBorrow = recordService.update(updateWrapper);
             if (agreeBorrow) {
                 UpdateWrapper<Book> bookUpdateWrapper = new UpdateWrapper<>();
@@ -114,8 +142,14 @@ public class RecordController {
                         .eq("pk_book_id",record.getPkBookId());
                 boolean bookUpdate = bookService.update(bookUpdateWrapper);
                 if (bookUpdate) {
-                    return Msg.success().add("agreeInfo","借阅申请已同意");
+                    boolean saveOp = operateService.save(operate);
+                    if (saveOp) {
+                        return Msg.success().add("agreeInfo","借阅申请已同意");
+                    }
+                    TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint1);
+                    return Msg.fail().add("agreeInfo","操作失败，请重试");
                 }
+                TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint1);
                 return Msg.fail().add("agreeInfo","操作失败，请重试");
             }
             return Msg.fail().add("agreeInfo","操作失败，请重试");
@@ -127,7 +161,7 @@ public class RecordController {
                 .eq("pk_book_id", record.getPkBookId())
                 .eq("pk_user_name", record.getPkUserName())
                 .eq("borrow_state", 2);
-        Object savepoint = TransactionAspectSupport.currentTransactionStatus().createSavepoint();
+        Object savepoint2 = TransactionAspectSupport.currentTransactionStatus().createSavepoint();
         boolean agree = recordService.update(wrapper);
         if (agree) {
             UpdateWrapper<Book> updateWrapperBook = new UpdateWrapper<>();
@@ -135,31 +169,63 @@ public class RecordController {
                     .eq("pk_book_id",record.getPkBookId());
             boolean bookUpdate = bookService.update(updateWrapperBook);
             if (bookUpdate) {
-                return Msg.success().add("agreeInfo","归还申请已同意");
+                boolean save = operateService.save(operate);
+                if (save) {
+                    return Msg.success().add("agreeInfo","归还申请已同意");
+                }
+                TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint2);
+                return Msg.fail().add("agreeInfo","操作失败，请重试");
             }
-            TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint);
+            TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint2);
             return Msg.fail().add("agreeInfo","操作失败，请重试");
         }
         return Msg.fail().add("agreeInfo","操作失败，请重试");
     }
 
-    @PutMapping("/refuse")
-    public Msg refuse(@RequestBody @Validated Record record,BindingResult bindingResult){
+    /**
+     * function（管理员拒绝用户申请）
+     * 同 同意 操作，不需要修改库存，其他一样
+     * @param record 一条申请记录
+     * @param bindingResult 后端校验信息
+     * @return Msg
+     */
+    @Transactional
+    @PutMapping("/refuse/{userName}")
+    public Msg refuse(@RequestBody @Validated Record record,BindingResult bindingResult,
+                      @PathVariable("userName") String userName){
         if (bindingResult.hasErrors()){
             return Msg.fail().add("refuseInfo",Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
         }
+        Operate operate = new Operate();
+        operate.setOpName(userName);operate.setOpType("拒绝");operate.setOpWho(record.getPkUserName());
+        operate.setOpState(record.getBorrowState());operate.setOpBook(record.getPkBookName());
+        operate.setOpTime(LocalDateTime.now());
+
         UpdateWrapper<Record> recordUpdateWrapper = new UpdateWrapper<>();
         recordUpdateWrapper.set("borrow_state", -1)
                 .eq("pk_book_id", record.getPkBookId())
                 .eq("pk_user_name", record.getPkUserName())
                 .eq("borrow_state", 0);
+        Object savepoint = TransactionAspectSupport.currentTransactionStatus().createSavepoint();
         boolean agreeBorrow = recordService.update(recordUpdateWrapper);
         if (agreeBorrow) {
-            return Msg.success().add("refuseInfo","借阅申请已拒绝");
+            boolean save = operateService.save(operate);
+            if (save) {
+                return Msg.success().add("refuseInfo","借阅申请已拒绝");
+            }
+            TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint);
+            return Msg.fail().add("refuseInfo","操作失败，请重试");
         }
         return Msg.fail().add("refuseInfo","操作失败，请重试");
     }
 
+    /**
+     * function（用户提交归还的申请）
+     * 修改对应的 借阅状态
+     * @param record 用户的一条借阅记录
+     * @param bindingResult 后端校验信息
+     * @return Msg
+     */
     @PutMapping("/returnBook")
     public Msg returnBook(@RequestBody @Validated Record record,BindingResult bindingResult){
         if (bindingResult.hasErrors()){
@@ -177,6 +243,12 @@ public class RecordController {
         return Msg.fail().add("returnInfo","操作失败，请重试");
     }
 
+    /**
+     * function（查询用户的0/1/2借阅状态的记录）
+     * @param bookId 书的ID
+     * @param userName 用户名
+     * @return 一条 0（申请借阅）/1（借阅中）/2（申请归还）记录
+     */
     public Record isRepeat(Integer bookId, String userName){
         QueryWrapper<Record> queryWrapper = new QueryWrapper<>();
         queryWrapper.select("pk_book_id, pk_user_name, borrow_state")
