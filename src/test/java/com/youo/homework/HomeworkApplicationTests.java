@@ -1,4 +1,5 @@
 package com.youo.homework;
+import ch.qos.logback.classic.LoggerContext;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.youo.homework.library.entity.Book;
 import com.youo.homework.library.entity.Record;
@@ -7,17 +8,16 @@ import com.youo.homework.library.service.impl.BookServiceImpl;
 import com.youo.homework.library.service.impl.RecordServiceImpl;
 import com.youo.homework.library.service.impl.UserServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
 
-import javax.annotation.Resource;
-import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.TimeZone;
+
 
 @SpringBootTest
 class HomeworkApplicationTests {
@@ -28,6 +28,26 @@ class HomeworkApplicationTests {
     private BookServiceImpl bookService;
     @Autowired
     private RecordServiceImpl recordService;
+    @Autowired
+    private RedisTemplate<Object,Object> redisTemplate;
+
+    @Test
+    void testRedis(){
+        //book
+        List<Book> list = bookService.list();
+        System.out.println("list = " + list);
+        //添加list
+        redisTemplate.opsForList().leftPushAll("Books", list);
+    }
+
+    @Test
+    void testLogback(){
+        Logger logger = LoggerFactory.getLogger("com.youo.homework.HomeworkApplicationTests.testLogback");
+//        logger.debug("test debug");
+        logger.error("test error");
+        LoggerContext iLoggerFactory = (LoggerContext) LoggerFactory.getILoggerFactory();
+        System.out.println("iLoggerFactory = " + iLoggerFactory);
+    }
 
     @Test
     void testMybatisPlusForUser(){
@@ -69,7 +89,7 @@ class HomeworkApplicationTests {
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.select("pk_id,pk_name,password,user_level")
                 .eq("user_level",0);
-        List list = userService.list(queryWrapper);
+        List<User> list = userService.list(queryWrapper);
         System.out.println("list = " + list);
     }
 

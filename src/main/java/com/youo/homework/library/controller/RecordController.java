@@ -12,7 +12,10 @@ import com.youo.homework.library.msg.Msg;
 import com.youo.homework.library.service.impl.BookServiceImpl;
 import com.youo.homework.library.service.impl.OperateServiceImpl;
 import com.youo.homework.library.service.impl.RecordServiceImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.validation.BindingResult;
@@ -35,20 +38,22 @@ import java.util.Objects;
 public class RecordController {
 
     @Autowired
-    RecordServiceImpl recordService;
+    private RecordServiceImpl recordService;
     @Autowired
-    BookServiceImpl bookService;
+    private BookServiceImpl bookService;
     @Autowired
-    OperateServiceImpl operateService;
+    private OperateServiceImpl operateService;
+    @Autowired
+    private RedisTemplate<Object,Object> redisTemplate;
+    private final Logger logger = LoggerFactory.getLogger(RecordController.class);
 
-    @GetMapping("/getRecordList/{page}/{sum}")
-    public Msg getRecordList(@PathVariable("page") Integer page,
-                             @PathVariable("sum") Integer sum){
-        IPage<Record> iPage = new Page<>(page,sum);
-        IPage<Record> recordIPage = recordService.page(iPage);
-        return Msg.success().add("recordsInfo",recordIPage);
-    }
-
+    /**
+     * function（管理界面获取的申请记录）
+     * 常更改，不加redis
+     * @param page 当前页
+     * @param sum 每页的大小
+     * @return 分页信息
+     */
     @GetMapping("/getRecordByAdmin/{page}/{sum}")
     public Msg getRecordByAdmin(@PathVariable("page") Integer page,
                                 @PathVariable("sum") Integer sum){
@@ -62,7 +67,7 @@ public class RecordController {
     }
 
     /**
-     * function（返回当前用户的借阅历史/归还历史）
+     * function（返回当前用户的 borrowed / history）
      * @param page 页数
      * @param sum 每页的记录数
      * @param state 借阅状态
@@ -88,6 +93,14 @@ public class RecordController {
         return Msg.success().add("recordsInfo",recordIPage);
     }
 
+    /**
+     * function（用户申请订阅）
+     * 如果数据库中存在未归还的同一本书，则不给订阅
+     * 成功订阅后要等待管理员同意
+     * @param record 订阅信息
+     * @param bindingResult 后端校验信息
+     * @return Msg
+     */
     @PostMapping("/subscribe")
     public synchronized Msg subscribe(@RequestBody @Validated Record record, BindingResult bindingResult){
         if (bindingResult.hasErrors()){
@@ -107,9 +120,34 @@ public class RecordController {
     }
 
     /**
-     * function（管理员同意用户申请）。
+     * function（用户提交归还的申请）
+     * 修改对应的 借阅状态
+     * @param record 用户的一条借阅记录
+     * @param bindingResult 后端校验信息
+     * @return Msg
+     */
+    @PutMapping("/returnBook")
+    public synchronized Msg returnBook(@RequestBody @Validated Record record,BindingResult bindingResult){
+        if (bindingResult.hasErrors()){
+            return Msg.fail().add("returnInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
+        }
+        UpdateWrapper<Record> UpdateWrapperRecord = new UpdateWrapper<>();
+        UpdateWrapperRecord.set("borrow_state", 2)
+                .eq("pk_book_id", record.getPkBookId())
+                .eq("pk_user_name", record.getPkUserName())
+                .eq("borrow_state", 1);
+        boolean agreeBorrow = recordService.update(UpdateWrapperRecord);
+        if (agreeBorrow) {
+            return Msg.success().add("returnInfo","已提交归还申请");
+        }
+        return Msg.fail().add("returnInfo","操作失败，请重试");
+    }
+
+    /**
+     * function（管理员同意用户申请借阅/归还）。
      * 第一步根据 后端校验结果 判断是否中止。
-     * 然后判断 record 中的借阅状态，是申请借阅，还是申请归还。同时修改书的库存。如果修改库存失败，需要回滚事务。
+     * 然后判断 record 中的借阅状态，是申请借阅，还是申请归还。同时修改书的库存,修改库存后需要删除图书缓存/操作记录缓存。
+     * 如果修改库存失败，需要回滚事务。
      * 两步都成功了，记录管理的操作。同样失败回滚事务。
      * @param record 一条申请记录
      * @param bindingResult 后端校验信息
@@ -144,6 +182,9 @@ public class RecordController {
                 if (bookUpdate) {
                     boolean saveOp = operateService.save(operate);
                     if (saveOp) {
+                        redisTemplate.delete("BookList");
+                        redisTemplate.delete("OperateList");
+                        logger.debug("清空图书/操作记录缓存...");
                         return Msg.success().add("agreeInfo","借阅申请已同意");
                     }
                     TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint1);
@@ -171,6 +212,8 @@ public class RecordController {
             if (bookUpdate) {
                 boolean save = operateService.save(operate);
                 if (save) {
+                    redisTemplate.delete("BookList");
+                    logger.debug("清空图书缓存...");
                     return Msg.success().add("agreeInfo","归还申请已同意");
                 }
                 TransactionAspectSupport.currentTransactionStatus().rollbackToSavepoint(savepoint2);
@@ -183,7 +226,7 @@ public class RecordController {
     }
 
     /**
-     * function（管理员拒绝用户申请）
+     * function（管理员拒绝用户借阅申请）
      * 同 同意 操作，不需要修改库存，其他一样
      * @param record 一条申请记录
      * @param bindingResult 后端校验信息
@@ -220,30 +263,6 @@ public class RecordController {
     }
 
     /**
-     * function（用户提交归还的申请）
-     * 修改对应的 借阅状态
-     * @param record 用户的一条借阅记录
-     * @param bindingResult 后端校验信息
-     * @return Msg
-     */
-    @PutMapping("/returnBook")
-    public Msg returnBook(@RequestBody @Validated Record record,BindingResult bindingResult){
-        if (bindingResult.hasErrors()){
-            return Msg.fail().add("returnInfo", Objects.requireNonNull(bindingResult.getFieldError()).getDefaultMessage());
-        }
-        UpdateWrapper<Record> UpdateWrapperRecord = new UpdateWrapper<>();
-        UpdateWrapperRecord.set("borrow_state", 2)
-                .eq("pk_book_id", record.getPkBookId())
-                .eq("pk_user_name", record.getPkUserName())
-                .eq("borrow_state", 1);
-        boolean agreeBorrow = recordService.update(UpdateWrapperRecord);
-        if (agreeBorrow) {
-            return Msg.success().add("returnInfo","已提交归还申请");
-        }
-        return Msg.fail().add("returnInfo","操作失败，请重试");
-    }
-
-    /**
      * function（查询用户的0/1/2借阅状态的记录）
      * @param bookId 书的ID
      * @param userName 用户名
@@ -257,5 +276,4 @@ public class RecordController {
                 .between("borrow_state", 0, 2);
         return recordService.getOne(queryWrapper);
     }
-
 }
